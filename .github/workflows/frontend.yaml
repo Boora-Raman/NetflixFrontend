@@ -58,5 +58,5 @@ jobs:
           sudo docker stop netflix-frontend || true
           sudo docker rm netflix-frontend || true
           # Run the new Docker image
-          sudo docker run -d --name netflix-frontend -p 3000:3000 $DOCKER_USERNAME/netflix-frontend:${{ github.sha }}
+          sudo docker run -d --name netflix-frontend -p 3000:3000 -e MOVIE_CATALOG_SERVICE=${{ secrets.BACKEND_CONTAINER_IP }}:8080 $DOCKER_USERNAME/netflix-frontend:${{ github.sha }}
         EOF
