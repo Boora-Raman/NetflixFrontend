@@ -1,0 +1,62 @@
+name: Deploy Frontend to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  EC2_PUBLIC_IP: ${{ secrets.EC2_PUBLIC_IP }}
+  SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+jobs:
+  deploy-frontend:
+    name: Deploy Frontend Application
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout the frontend app code
+      uses: actions/checkout@v2
+
+    - name: Set up Node.js environment
+      uses: actions/setup-node@v3
+      with:
+        node-version: '14.1.0'
+
+    - name: Install Node.js dependencies and build frontend
+      run: |
+        npm install
+        npm run build
+
+    - name: Build Docker image for frontend
+      run: |
+        IMAGE_TAG="${{ github.sha }}"
+        docker build -t $DOCKER_USERNAME/netflix-frontend:$IMAGE_TAG .
+
+    - name: Login to Docker Hub
+      run: |
+        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+    - name: Push Docker image to Docker Hub
+      run: |
+        IMAGE_TAG="${{ github.sha }}"
+        docker push $DOCKER_USERNAME/netflix-frontend:$IMAGE_TAG
+
+    - name: Copy frontend files to EC2
+      run: |
+        echo "$SSH_PRIVATE_KEY" > mykey.pem
+        chmod 600 mykey.pem
+        scp -o StrictHostKeyChecking=no -i mykey.pem -r * ubuntu@$EC2_PUBLIC_IP:~/NetflixFrontend/
+
+    - name: Run deployment script on EC2 for frontend
+      run: |
+        ssh -i mykey.pem ubuntu@$EC2_PUBLIC_IP << 'EOF'
+          cd ~/NetflixFrontend
+          # Stop any existing frontend container
+          sudo docker stop netflix-frontend || true
+          sudo docker rm netflix-frontend || true
+          # Run the new Docker image
+          sudo docker run -d --name netflix-frontend -p 3000:3000 $DOCKER_USERNAME/netflix-frontend:${{ github.sha }}
+        EOF
