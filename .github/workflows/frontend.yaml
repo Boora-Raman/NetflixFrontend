@@ -32,7 +32,7 @@ jobs:
         npm run build
         # Run the built app temporarily in the background
         nohup npm start &  # Replace with the appropriate command if needed
-        sleep 2
+        sleep 1
 
     - name: Build Docker image for frontend
       run: |
@@ -59,7 +59,7 @@ jobs:
         IMAGE_TAG="${{ github.sha }}"
 
         # SSH into EC2 and run commands
-        ssh -o StrictHostKeyChecking=no -i mykey.pem ubuntu@$EC2_PUBLIC_IP << EOF
+        ssh -o StrictHostKeyChecking=no -i mykey.pem admin@$EC2_PUBLIC_IP << EOF
           # Set the image tag inside the EC2 instance
           IMAGE_TAG=$IMAGE_TAG
 
