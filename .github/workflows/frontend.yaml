@@ -10,6 +10,7 @@ env:
   SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
   DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
   DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  BACKEND_CONTAINER_IP: ${{ secrets.BACKEND_CONTAINER_IP }}
 
 jobs:
   deploy-frontend:
@@ -29,6 +30,9 @@ jobs:
       run: |
         npm install
         npm run build
+        # Run the built app temporarily in the background
+        nohup npm start &  # Replace with the appropriate command if needed
+        sleep 2
 
     - name: Build Docker image for frontend
       run: |
@@ -44,19 +48,30 @@ jobs:
         IMAGE_TAG="${{ github.sha }}"
         docker push $DOCKER_USERNAME/netflix-frontend:$IMAGE_TAG
 
-    - name: Copy frontend files to EC2
+    - name: Copy SSH key to GitHub runner
       run: |
         echo "$SSH_PRIVATE_KEY" > mykey.pem
         chmod 600 mykey.pem
-        scp -o StrictHostKeyChecking=no -i mykey.pem -r * ubuntu@$EC2_PUBLIC_IP:~/NetflixFrontend/
 
-    - name: Run deployment script on EC2 for frontend
+    - name: Deploy frontend Docker image on EC2
       run: |
-        ssh -i mykey.pem ubuntu@$EC2_PUBLIC_IP << 'EOF'
-          cd ~/NetflixFrontend
-          # Stop any existing frontend container
-          sudo docker stop netflix-frontend || true
-          sudo docker rm netflix-frontend || true
-          # Run the new Docker image
-          sudo docker run -d --name netflix-frontend -p 3000:3000 -e MOVIE_CATALOG_SERVICE=${{ secrets.BACKEND_CONTAINER_IP }}:8080 $DOCKER_USERNAME/netflix-frontend:${{ github.sha }}
+        # Define the IMAGE_TAG in GitHub Actions runner
+        IMAGE_TAG="${{ github.sha }}"
+
+        # SSH into EC2 and run commands
+        ssh -o StrictHostKeyChecking=no -i mykey.pem ubuntu@$EC2_PUBLIC_IP << EOF
+          # Set the image tag inside the EC2 instance
+          IMAGE_TAG=$IMAGE_TAG
+
+          # Stop and remove the existing frontend container if it exists
+          if sudo docker ps -a --format '{{.Names}}' | grep -Eq "^netflix-frontend\$"; then
+            sudo docker stop netflix-frontend || true
+            sudo docker rm netflix-frontend || true
+          fi
+
+          # Pull the latest Docker image from Docker Hub
+          sudo docker pull $DOCKER_USERNAME/netflix-frontend:\$IMAGE_TAG
+
+          # Run the new Docker image as the main container
+          sudo docker run -d --name netflix-frontend -p 3000:3000 -e MOVIE_CATALOG_SERVICE=${{ secrets.BACKEND_CONTAINER_IP }}:8080 $DOCKER_USERNAME/netflix-frontend:\$IMAGE_TAG
         EOF
